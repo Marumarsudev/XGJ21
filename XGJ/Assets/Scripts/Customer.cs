@@ -8,7 +8,8 @@ public enum CustomerState
     Idle,
     MovingToMachine,
     Playing,
-    MovingToExit
+    MovingToExit,
+    MovingToEntrance
 }
 
 public class Customer : MonoBehaviour
@@ -21,6 +22,9 @@ public class Customer : MonoBehaviour
     private CustomerState customerState;
 
     private Transform agentTarget;
+
+    private float money;
+
     void Start()
     {
         Invoke("UpdateInfo", 1f);
@@ -29,10 +33,12 @@ public class Customer : MonoBehaviour
     private void UpdateInfo() //Vitun purkka paskaa kekw: :D-:,d:D;DD
     {
         customerState = CustomerState.Idle;
+        money = Random.Range(0f, 10f) * 10f;
         arcade = GameObject.FindWithTag("Arcade").GetComponent<Arcade>();
         player = GameObject.FindWithTag("MainCamera").GetComponent<Player>();
         agent = GetComponent<NavMeshAgent>();
-        GotoMachine();
+
+        GoToEntrance();
     }
 
     void Update()
@@ -57,6 +63,13 @@ public class Customer : MonoBehaviour
                             case CustomerState.MovingToExit:
                                 Destroy(this.gameObject); // haha commit sudoku
                                 break;
+                            case CustomerState.Idle:
+                                if (agentTarget != null)
+                                transform.rotation = agentTarget.rotation;
+                                break;
+                            case CustomerState.MovingToEntrance:
+                                    GotoMachine();
+                                break;
                             default:
                                 break;
                         }
@@ -70,40 +83,105 @@ public class Customer : MonoBehaviour
     {
         agent.isStopped = true;
         customerState = CustomerState.Idle;
-        StartCoroutine(PlayGame(2f));
+        GotoMachine();
+        //StartCoroutine(PlayGame(2f));
+    }
+
+    public void MoveInQueue(Vector3 point)
+    {
+        agent.destination = point;
+    }
+
+    public void MoveToMachine(ArcadeMachine machine)
+    {
+        targetMachine = machine;
+        agent.isStopped = false;
+        customerState = CustomerState.MovingToMachine;
+        agentTarget = targetMachine.playingArea;
+        agent.destination = agentTarget.position;
     }
 
     private void GotoMachine()
     {
         if(targetMachine != null)
         {
-            arcade.SetArcadeMachineAvailable(targetMachine);
+            //arcade.SetArcadeMachineAvailable(targetMachine);
             targetMachine = null;
         }
 
         targetMachine = arcade.GetRandomAvailableMachine();
         if (targetMachine != null)
         {
-            agent.isStopped = false;
-            targetMachine.SetUser(this);
-            customerState = CustomerState.MovingToMachine;
-            agentTarget = targetMachine.playingArea;
-            agent.destination = agentTarget.position;
+            if (money >= arcade.entryFee)
+            {
+                money -= arcade.entryFee;
+                player.AddMoney(arcade.entryFee);
+                agent.isStopped = false;
+                if (!targetMachine.SetUser(this))
+                {
+                    GoToExit();
+                }
+                customerState = CustomerState.MovingToMachine;
+                agentTarget = targetMachine.playingArea;
+                agent.destination = agentTarget.position;
+            }
+            else
+            {
+                GoToExit();
+            }
         }
         else
         {
-            customerState = CustomerState.Idle;
-            StartCoroutine(PlayGame(2f));
+            targetMachine = arcade.GetRandomOccupiedMachine();
+            if (targetMachine != null)
+            {
+                if (!targetMachine.IsQueueFull())
+                {
+                    if (money >= arcade.entryFee)
+                    {
+                        money -= arcade.entryFee;
+                        player.AddMoney(arcade.entryFee);
+                        agent.isStopped = false;
+                        if (!targetMachine.SetUser(this))
+                        {
+                            GoToExit();
+                        }
+                        customerState = CustomerState.Idle;
+                        agentTarget = targetMachine.playingArea;
+                        agent.destination = targetMachine.GetEndOfQueuePoint();
+                    }
+                    else
+                    {
+                        GoToExit();
+                    }
+                }
+                else
+                {
+                    GoToExit();
+                }
+            }
+            else
+            {
+                GoToExit();
+            }
         }
     }
 
     private void GoToExit()
     {
         agent.isStopped = false;
-        arcade.SetArcadeMachineAvailable(targetMachine);
-        targetMachine = null;
+        arcade.RemoveCustomer(this);
+        //arcade.SetArcadeMachineAvailable(targetMachine);
         customerState = CustomerState.MovingToExit;
         agentTarget = GameObject.FindWithTag("Exit").transform;
+        agent.destination = agentTarget.position;
+    }
+
+    private void GoToEntrance()
+    {
+        agent.isStopped = false;
+        customerState = CustomerState.MovingToEntrance;
+        agentTarget = GameObject.FindWithTag("Entrance").transform;
         agent.destination = agentTarget.position;
     }
 
@@ -114,11 +192,21 @@ public class Customer : MonoBehaviour
 
         if (Random.Range(0f, 1f) >= 0.6f)
         {
-            GotoMachine();
+            if (targetMachine != null)
+            {
+                targetMachine.DonePlaying();
+                targetMachine = null;
+            }
+            GoToEntrance();
         }
         else
         {
             GoToExit();
+            if (targetMachine != null)
+            {
+                targetMachine.DonePlaying();
+                targetMachine = null;
+            }
         }
     }
 }

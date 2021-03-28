@@ -6,6 +6,7 @@ TagManager:
   tags:
   - Arcade
   - Exit
+  - Entrance
   layers:
   - Default
   - TransparentFX
